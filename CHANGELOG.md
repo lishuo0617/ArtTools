@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.2.0
+
+- Added a Missing Script checker to the unified Art Tools hub.
+- Added folder-scoped and full-Assets Prefab scanning with missing counts and node paths.
+- Added one-click Prefab opening and automatic selection of the first missing child node.
+- Kept `Art Tools > 美术工具中心` as the only top-level Art Tools menu entry.
+- Refined the compact checker layout and explicit scan-path workflow.
+
 ## 1.1.0
 
 - Added Unity 2017-2022 editor API compatibility fallbacks.

@@ -19,6 +19,7 @@ ArtTools is an editor-only utility collection for organizing common art-producti
 - Texture size inspection and resizing
 - Unused texture discovery
 - Asset organization, batch naming, material validation and conversion
+- Missing Script scanning with Prefab and child-node location
 - Decoration placement and scene quick opening
 - Smooth Normal baking
 
