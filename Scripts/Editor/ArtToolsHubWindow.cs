@@ -52,6 +52,7 @@ namespace ArtTools.EditorTools
         {
             new ToolEntry("3D资产整理工具", "整理 3D 资产目录、预制体和相关资源。", "ArtTools.EditorTools.AssetOrganizerWindow", "d_Folder Icon", "Open", "ShowWindow"),
             new ToolEntry("批量命名修改", "按选择顺序批量重命名，并可按编号调整层级排序。", "ArtTools.EditorTools.AutoNamer", "d_TextAsset Icon", "ShowWindow", "Open"),
+            new ToolEntry("Missing Script 检查", "批量扫描 Prefab 缺失脚本，并定位到具体子节点。", "ArtTools.EditorTools.MissingScriptCheckerWindow", "d_console.warnicon", "Open"),
             new ToolEntry("缺失材质检测", "检查目标对象及子物体上缺失的材质槽位。", "ArtTools.EditorTools.MissingMaterialChecker", "d_Material Icon", "Open", "ShowWindow"),
             new ToolEntry("目录材质转换", "对指定目录内的材质进行批量转换。", "ArtTools.EditorTools.MaterialDirectoryConverterWindow", "d_PreMatCube", "Open")
         };
