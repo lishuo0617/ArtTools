@@ -217,9 +217,9 @@ private void SpawnDecorations()
         ArtToolsEditorUI.EndPanel();
 
         ArtToolsEditorUI.BeginPanel("旋转随机");
-        rotXRange = EditorGUILayout.Vector2Field("X 轴 (min, max)", rotXRange);
-        rotYRange = EditorGUILayout.Vector2Field("Y 轴 (min, max)", rotYRange);
-        rotZRange = EditorGUILayout.Vector2Field("Z 轴 (min, max)", rotZRange);
+        rotXRange = DrawMinMaxField("X 轴", rotXRange);
+        rotYRange = DrawMinMaxField("Y 轴", rotYRange);
+        rotZRange = DrawMinMaxField("Z 轴", rotZRange);
 
         EditorGUILayout.BeginHorizontal();
         if (GUILayout.Button("旋转随机", ArtToolsEditorUI.PrimaryButtonStyle))
@@ -236,11 +236,20 @@ private void SpawnDecorations()
         ArtToolsEditorUI.EndPanel();
 
         ArtToolsEditorUI.BeginPanel("缩放随机");
-        scaleXZ = EditorGUILayout.Vector2Field("XZ 轴 (min, max)", scaleXZ);
-        scaleY = EditorGUILayout.Vector2Field("Y 轴 (min, max)", scaleY);
+        scaleXZ = DrawMinMaxField("XZ 轴", scaleXZ);
+        scaleY = DrawMinMaxField("Y 轴", scaleY);
         if (ArtToolsEditorUI.PrimaryButton("缩放随机"))
             RandomizeScale();
         ArtToolsEditorUI.EndPanel();
+    }
+
+    private static Vector2 DrawMinMaxField(string label, Vector2 value)
+    {
+        float[] values = { value.x, value.y };
+        GUIContent[] subLabels = { new GUIContent("min"), new GUIContent("max") };
+        Rect position = EditorGUILayout.GetControlRect();
+        EditorGUI.MultiFloatField(position, new GUIContent(label), subLabels, values);
+        return new Vector2(values[0], values[1]);
     }
 
     private void RandomizePosition()
