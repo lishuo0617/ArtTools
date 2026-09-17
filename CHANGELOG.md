@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.2.1
+
+- Integrated scene placement into the Decoration Tool generator workflow.
+- Added selectable scene-placement Profiles with mixed placement support.
+- Added horizontal and circular placement controls plus scene-view wheel shortcuts.
+- Kept generated objects grouped under their own named parent objects.
+- Hid the standalone Prefab Placer hub entry and the overlapping vertical placement option while retaining their underlying implementation.
+
 ## 1.2.0
 
 - Added a Missing Script checker to the unified Art Tools hub.

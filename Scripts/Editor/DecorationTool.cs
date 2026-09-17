@@ -19,6 +19,13 @@ public class DecorationTool : EditorWindow
     }
 
     [System.Serializable]
+    public class ScenePlacementProfile
+    {
+        public bool enabled = true;
+        public GameObject prefab;
+    }
+
+    [System.Serializable]
     public class PrefabReplacePair
     {
         [InspectorName("旧 Prefab")]
@@ -30,13 +37,18 @@ public class DecorationTool : EditorWindow
     // --- UI Tabs ---
     private int tabIndex = 0;
     private readonly string[] tabs = new[] { "生成器", "随机器", "批量Prefab替换器" };
+    [SerializeField] private int spawnerMode = 0;
+    private bool showProfileList = false;
+    private bool showSceneProfileList = false;
     private Vector2 mainScroll;
-    private Vector2 spawnerScroll;
+    [System.NonSerialized] private PrefabPlacerTool embeddedPrefabPlacer;
 
 
     public GameObject targetObject;
     [InspectorName("装饰物列表")]
     public List<DecorationPrefab> decorations = new List<DecorationPrefab>();
+    [InspectorName("场景放置 Profile 列表")]
+    public List<ScenePlacementProfile> scenePlacementProfiles = new List<ScenePlacementProfile>();
 
 
     public Vector3 posRange = new Vector3(1, 0, 1);
@@ -65,7 +77,14 @@ public class DecorationTool : EditorWindow
 
     private void OnDisable()
     {
+        DisposeEmbeddedPrefabPlacer();
         SavePrefs();
+    }
+
+    private void OnInspectorUpdate()
+    {
+        if (embeddedPrefabPlacer != null && embeddedPrefabPlacer.IsSceneModeActive)
+            Repaint();
     }
 
     private void OnGUI()
@@ -73,7 +92,10 @@ public class DecorationTool : EditorWindow
         ArtToolsEditorUI.DrawHeader("装饰物工具", "生成装饰物、随机调整并批量替换 Prefab", "d_TerrainInspector.TerrainToolPlants");
 
         ArtToolsEditorUI.BeginPanel("");
+        int previousTab = tabIndex;
         tabIndex = GUILayout.Toolbar(tabIndex, tabs, GUILayout.Height(24));
+        if (previousTab == 0 && tabIndex != 0)
+            DeactivateEmbeddedPrefabPlacer();
         ArtToolsEditorUI.EndPanel();
 
         mainScroll = EditorGUILayout.BeginScrollView(mainScroll);
@@ -98,31 +120,245 @@ public class DecorationTool : EditorWindow
 
 private void DrawSpawnerTab()
 {
+    DrawGeneratorModeSelector();
+
+    if (spawnerMode == 1)
+        DrawScenePlacementGuide();
+
+    DrawSharedGeneratorSettings();
+
+    if (spawnerMode == 1)
+        DrawScenePlacer();
+
+    DrawGenerationAction();
+}
+
+private void DrawScenePlacementGuide()
+{
+    ArtToolsEditorUI.BeginPanel("快捷操作");
+    ArtToolsEditorUI.Summary(
+        "Alt+滚轮：调整数量\n" +
+        "Ctrl+Alt+滚轮：调整范围/间隔\n" +
+        "Shift+Alt+滚轮：调整旋转角度\n" +
+        "Esc：退出场景放置");
+    ArtToolsEditorUI.EndPanel();
+}
+
+private void DrawSharedGeneratorSettings()
+{
+    if (spawnerMode == 1)
+    {
+        DrawScenePlacementProfileSettings();
+        return;
+    }
+
     ArtToolsEditorUI.BeginPanel("生成设置");
     targetObject = (GameObject)EditorGUILayout.ObjectField("目标对象", targetObject, typeof(GameObject), true);
 
     GUILayout.Space(8);
-    EditorGUILayout.LabelField("装饰物 Prefab 列表（含数量限制）", EditorStyles.boldLabel);
+    EditorGUILayout.LabelField("装饰物 Profile 列表（Prefab 与数量限制）", EditorStyles.boldLabel);
 
-    spawnerScroll = EditorGUILayout.BeginScrollView(spawnerScroll, GUILayout.Height(300));
     SerializedObject so = new SerializedObject(this);
     SerializedProperty listProp = so.FindProperty("decorations");
-    EditorGUILayout.PropertyField(listProp, true);
+    listProp.isExpanded = showProfileList;
+    EditorGUILayout.PropertyField(
+        listProp,
+        new GUIContent($"Profile 列表（{listProp.arraySize}）"),
+        true);
+    showProfileList = listProp.isExpanded;
     so.ApplyModifiedProperties();
-    EditorGUILayout.EndScrollView();
     ArtToolsEditorUI.EndPanel();
+}
 
+private void DrawScenePlacementProfileSettings()
+{
+    if (scenePlacementProfiles == null)
+        scenePlacementProfiles = new List<ScenePlacementProfile>();
+
+    ArtToolsEditorUI.BeginPanel("生成设置");
+
+    showSceneProfileList = EditorGUILayout.Foldout(
+        showSceneProfileList,
+        $"Profile 列表（{scenePlacementProfiles.Count}）",
+        true);
+
+    if (showSceneProfileList)
+    {
+        int removeIndex = -1;
+        for (int i = 0; i < scenePlacementProfiles.Count; i++)
+        {
+            ScenePlacementProfile profile = scenePlacementProfiles[i];
+            if (profile == null)
+            {
+                profile = new ScenePlacementProfile();
+                scenePlacementProfiles[i] = profile;
+            }
+
+            EditorGUILayout.BeginHorizontal(ArtToolsEditorUI.RowStyle);
+
+            bool enabled = EditorGUILayout.Toggle(profile.enabled, GUILayout.Width(18));
+            GameObject prefab = (GameObject)EditorGUILayout.ObjectField(
+                profile.prefab,
+                typeof(GameObject),
+                false);
+
+            if (GUILayout.Button("−", GUILayout.Width(26)))
+                removeIndex = i;
+
+            EditorGUILayout.EndHorizontal();
+
+            if (enabled != profile.enabled || prefab != profile.prefab)
+            {
+                Undo.RecordObject(this, "Edit Scene Placement Profile");
+                profile.enabled = enabled;
+                profile.prefab = prefab;
+                EditorUtility.SetDirty(this);
+            }
+        }
+
+        if (removeIndex >= 0)
+        {
+            Undo.RecordObject(this, "Remove Scene Placement Profile");
+            scenePlacementProfiles.RemoveAt(removeIndex);
+            EditorUtility.SetDirty(this);
+        }
+
+        if (GUILayout.Button("+ 添加 Profile"))
+        {
+            Undo.RecordObject(this, "Add Scene Placement Profile");
+            scenePlacementProfiles.Add(new ScenePlacementProfile());
+            EditorUtility.SetDirty(this);
+        }
+
+        if (scenePlacementProfiles.Count == 0)
+            EditorGUILayout.HelpBox("添加要用于场景混合放置的 Prefab。", MessageType.Info);
+    }
+
+    ArtToolsEditorUI.EndPanel();
+}
+
+private void DrawGeneratorModeSelector()
+{
+    ArtToolsEditorUI.BeginPanel("生成模块");
+    EditorGUILayout.BeginHorizontal();
+
+    bool vertexSelected = EditorGUILayout.ToggleLeft("顶点生成", spawnerMode == 0, GUILayout.ExpandWidth(true));
+    bool sceneSelected = EditorGUILayout.ToggleLeft("场景放置", spawnerMode == 1, GUILayout.ExpandWidth(true));
+
+    EditorGUILayout.EndHorizontal();
+
+    int requestedMode = spawnerMode;
+    if (vertexSelected && spawnerMode != 0)
+        requestedMode = 0;
+    else if (sceneSelected && spawnerMode != 1)
+        requestedMode = 1;
+
+    if (requestedMode != spawnerMode)
+    {
+        if (spawnerMode == 1)
+            DeactivateEmbeddedPrefabPlacer();
+
+        spawnerMode = requestedMode;
+        if (spawnerMode == 1)
+        {
+            EnsureEmbeddedPrefabPlacer();
+            SyncSharedSettingsToPlacer();
+        }
+    }
+
+    EditorGUILayout.LabelField("勾选一个生成模块；两种模式分别使用各自的生成设置。", EditorStyles.miniLabel);
+    ArtToolsEditorUI.EndPanel();
+}
+
+private void DrawGenerationAction()
+{
     ArtToolsEditorUI.BeginPanel("操作");
     if (ArtToolsEditorUI.PrimaryButton("生成装饰物"))
     {
-        if (targetObject == null || decorations.Count == 0)
+        if (spawnerMode == 0 &&
+            (targetObject == null || !decorations.Exists(item => item != null && item.prefab != null)))
         {
             EditorUtility.DisplayDialog("提示", "请先设置目标对象和 Prefab 列表。", "确定");
             return;
         }
-        SpawnDecorations();
+
+        if (spawnerMode == 1 &&
+            !scenePlacementProfiles.Exists(item => item != null && item.enabled && item.prefab != null))
+        {
+            EditorUtility.DisplayDialog("提示", "请至少勾选一个有效的 Profile。", "确定");
+            return;
+        }
+
+        if (spawnerMode == 0)
+        {
+            SpawnDecorations();
+        }
+        else
+        {
+            EnsureEmbeddedPrefabPlacer();
+            SyncSharedSettingsToPlacer();
+            embeddedPrefabPlacer.TogglePlacementFromHost();
+        }
     }
+
+    if (spawnerMode == 1 && embeddedPrefabPlacer != null && embeddedPrefabPlacer.IsPlacementModeActive)
+        EditorGUILayout.HelpBox("场景放置已开启：请在 Scene 视图中点击生成，再次点击“生成装饰物”可退出。", MessageType.Info);
+
     ArtToolsEditorUI.EndPanel();
+}
+
+private void DrawScenePlacer()
+{
+    EnsureEmbeddedPrefabPlacer();
+    SyncSharedSettingsToPlacer();
+
+    embeddedPrefabPlacer.DrawEmbeddedGUI(new Vector2(
+        Mathf.Max(400f, position.width - 24f),
+        Mathf.Max(610f, position.height - 140f)));
+}
+
+private void EnsureEmbeddedPrefabPlacer()
+{
+    if (embeddedPrefabPlacer != null)
+        return;
+
+    embeddedPrefabPlacer = CreateInstance<PrefabPlacerTool>();
+    embeddedPrefabPlacer.hideFlags = HideFlags.HideAndDontSave;
+    SyncSharedSettingsToPlacer();
+}
+
+private void SyncSharedSettingsToPlacer()
+{
+    if (embeddedPrefabPlacer == null)
+        return;
+
+    List<GameObject> prefabs = new List<GameObject>();
+    foreach (ScenePlacementProfile profile in scenePlacementProfiles)
+    {
+        if (profile != null && profile.enabled && profile.prefab != null)
+            prefabs.Add(profile.prefab);
+    }
+
+    embeddedPrefabPlacer.UseAnyPlacementSurface();
+    embeddedPrefabPlacer.SyncPrefabs(prefabs);
+}
+
+private void DeactivateEmbeddedPrefabPlacer()
+{
+    if (embeddedPrefabPlacer == null)
+        return;
+
+    embeddedPrefabPlacer.StopAllSceneModes();
+}
+
+private void DisposeEmbeddedPrefabPlacer()
+{
+    if (embeddedPrefabPlacer == null)
+        return;
+
+    DeactivateEmbeddedPrefabPlacer();
+    UnityEngine.Object.DestroyImmediate(embeddedPrefabPlacer);
+    embeddedPrefabPlacer = null;
 }
 
 private void SpawnDecorations()
