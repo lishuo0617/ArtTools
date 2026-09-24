@@ -13,6 +13,7 @@ namespace ArtTools.ImageTools
         [HideInInspector] public int frameCount;
         [HideInInspector] public string fileName;
         [HideInInspector] public string filePath;
+        public string LastSavedFile { get; private set; }
 
         void Awake()
         {
@@ -68,6 +69,7 @@ namespace ArtTools.ImageTools
             );
 
             File.WriteAllBytes(path, bytes);
+            LastSavedFile = path;
 
 #if UNITY_EDITOR
             DestroyImmediate(rt);

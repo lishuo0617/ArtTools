@@ -2,53 +2,87 @@
 using UnityEditor;
 using System.IO;
 using ArtTools.Framework;
+#if UNITY_2019_1_OR_NEWER
+using UnityEditor.ShortcutManagement;
+#endif
 
 namespace ArtTools.ImageTools
 {
     public class ImageExporterEditorWindow : EditorWindow
     {
-        private Camera cam;
-        private Vector2 resolution = new Vector2(1280, 720);
-        private int frameCount = 30;
+#if UNITY_2019_1_OR_NEWER
+        private const string ScreenshotShortcutId = "ArtTools/截图与序列图导出/截取单张图片";
+#endif
+
+        [SerializeField] private Camera cam;
+        [SerializeField] private Vector2 resolution = new Vector2(1280, 720);
+        [SerializeField] private int frameCount = 30;
 
         private enum ImageFormat { PNG, JPG }
-        private ImageFormat imageFormat = ImageFormat.PNG;
+        [SerializeField] private ImageFormat imageFormat = ImageFormat.PNG;
 
-        private bool isEnabledAlpha;
-        private bool isExportSequence;
+        [SerializeField] private bool isEnabledAlpha;
+        [SerializeField] private bool isExportSequence;
 
-        private string fileName = "screenShot";
-        private string filePath;
+        [SerializeField] private string fileName = "screenShot";
+        [SerializeField] private string filePath;
 
-        private int rangeStart = 1;
-        private int rangeEnd = 100;
+        [SerializeField] private int rangeStart = 1;
+        [SerializeField] private int rangeEnd = 100;
         private float progress;
 
         private ImageExporterController controller;
 
-        private CameraClearFlags cachedClearFlags;
-        private Color cachedBackground;
+        [SerializeField] private CameraClearFlags cachedClearFlags;
+        [SerializeField] private Color cachedBackground;
 
         private bool foldoutBase = true;
         private bool foldoutSequence = true;
 
+#if UNITY_2019_1_OR_NEWER
+        private KeyCode shortcutKey = KeyCode.S;
+        private bool shortcutAction = true;
+        private bool shortcutShift = true;
+        private bool shortcutAlt;
+        private string shortcutStatus;
+        private MessageType shortcutStatusType = MessageType.Info;
+#endif
+
         static void Open()
         {
             var window = GetWindow<ImageExporterEditorWindow>("截图与序列图导出");
-            window.minSize = new Vector2(320, 520);
+            window.minSize = new Vector2(320, 620);
         }
 
-        
+#if UNITY_2019_1_OR_NEWER
+        [Shortcut(
+            ScreenshotShortcutId,
+            KeyCode.S,
+            ShortcutModifiers.Action | ShortcutModifiers.Shift)]
+#endif
         static void TakeScreenshotShortcut()
         {
             var window = GetWindow<ImageExporterEditorWindow>();
+            window.Show();
+            if (window.cam == null)
+                window.cam = Camera.main;
             window.TakeSingleScreenshot();
         }
 
         void OnEnable()
         {
             Application.runInBackground = true;
-            filePath = Application.dataPath;
+            if (string.IsNullOrEmpty(filePath))
+                filePath = Application.dataPath;
+            if (cam == null)
+                cam = Camera.main;
+
+#if UNITY_2019_1_OR_NEWER
+            ShortcutManager.instance.shortcutBindingChanged -= OnShortcutBindingChanged;
+            ShortcutManager.instance.shortcutBindingChanged += OnShortcutBindingChanged;
+            RefreshShortcutFields();
+            RefreshShortcutConflictStatus();
+#endif
         }
 
         void Update()
@@ -66,7 +100,7 @@ namespace ArtTools.ImageTools
 
             if (Time.frameCount > rangeEnd)
             {
-                StopExport();
+                StopExport(true);
                 return;
             }
 
@@ -89,7 +123,7 @@ namespace ArtTools.ImageTools
                 $"进度 {Mathf.RoundToInt(progress * 100)}%",
                 progress))
             {
-                StopExport();
+                StopExport(false);
             }
         }
 
@@ -102,9 +136,12 @@ namespace ArtTools.ImageTools
             controller = go.AddComponent<ImageExporterController>();
         }
 
-        void StopExport()
+        void StopExport(bool completed)
         {
             EditorUtility.ClearProgressBar();
+            string lastSavedFile = completed && controller != null
+                ? controller.LastSavedFile
+                : null;
             EditorApplication.isPlaying = false;
             isExportSequence = false;
 
@@ -115,6 +152,9 @@ namespace ArtTools.ImageTools
                 DestroyImmediate(controller.gameObject);
                 controller = null;
             }
+
+            if (!string.IsNullOrEmpty(lastSavedFile) && File.Exists(lastSavedFile))
+                EditorUtility.RevealInFinder(lastSavedFile);
         }
 
         void CacheCamera()
@@ -199,9 +239,185 @@ namespace ArtTools.ImageTools
             if (GUILayout.Button("截取单张图片", GUILayout.Height(28)))
                 TakeSingleScreenshot();
 
+            DrawShortcutSettings();
+
             EditorGUILayout.EndVertical();
             EditorGUILayout.EndFoldoutHeaderGroup();
         }
+
+        void DrawShortcutSettings()
+        {
+            GUILayout.Space(8);
+            EditorGUILayout.LabelField("单张截图快捷键", EditorStyles.boldLabel);
+
+#if UNITY_2019_1_OR_NEWER
+            EditorGUILayout.BeginHorizontal();
+            EditorGUILayout.PrefixLabel("当前快捷键");
+            EditorGUILayout.SelectableLabel(
+                GetCurrentShortcutText(),
+                EditorStyles.textField,
+                GUILayout.Height(EditorGUIUtility.singleLineHeight));
+            EditorGUILayout.EndHorizontal();
+
+            EditorGUILayout.BeginHorizontal();
+            shortcutAction = EditorGUILayout.ToggleLeft("Ctrl / Cmd", shortcutAction, GUILayout.Width(82));
+            shortcutShift = EditorGUILayout.ToggleLeft("Shift", shortcutShift, GUILayout.Width(55));
+            shortcutAlt = EditorGUILayout.ToggleLeft("Alt", shortcutAlt, GUILayout.Width(45));
+            shortcutKey = (KeyCode)EditorGUILayout.EnumPopup(shortcutKey);
+            EditorGUILayout.EndHorizontal();
+
+            EditorGUILayout.BeginHorizontal();
+            using (new EditorGUI.DisabledScope(shortcutKey == KeyCode.None))
+            {
+                if (GUILayout.Button("应用快捷键"))
+                    ApplyShortcutBinding();
+            }
+
+            if (GUILayout.Button("恢复默认"))
+                ResetShortcutBinding();
+            EditorGUILayout.EndHorizontal();
+
+            if (!string.IsNullOrEmpty(shortcutStatus))
+                EditorGUILayout.HelpBox(shortcutStatus, shortcutStatusType);
+            else
+                EditorGUILayout.HelpBox(
+                    "快捷键只在 Unity 处于激活状态时生效，也可以在 Edit > Shortcuts 中修改。",
+                    MessageType.None);
+#else
+            EditorGUILayout.HelpBox(
+                "动态快捷键需要 Unity 2019.1 或更高版本。当前版本仍可使用“截取单张图片”按钮。",
+                MessageType.Info);
+#endif
+        }
+
+#if UNITY_2019_1_OR_NEWER
+        void RefreshShortcutFields()
+        {
+            ShortcutBinding binding = ShortcutManager.instance.GetShortcutBinding(ScreenshotShortcutId);
+            foreach (KeyCombination combination in binding.keyCombinationSequence)
+            {
+                shortcutKey = combination.keyCode;
+                shortcutAction = combination.action || combination.control;
+                shortcutShift = combination.shift;
+                shortcutAlt = combination.alt;
+                return;
+            }
+
+            shortcutKey = KeyCode.None;
+            shortcutAction = false;
+            shortcutShift = false;
+            shortcutAlt = false;
+        }
+
+        string GetCurrentShortcutText()
+        {
+            ShortcutBinding binding = ShortcutManager.instance.GetShortcutBinding(ScreenshotShortcutId);
+            string text = binding.ToString();
+            return string.IsNullOrEmpty(text) ? "未设置" : text;
+        }
+
+        void ApplyShortcutBinding()
+        {
+            ShortcutModifiers modifiers = ShortcutModifiers.None;
+            if (shortcutAction) modifiers |= ShortcutModifiers.Action;
+            if (shortcutShift) modifiers |= ShortcutModifiers.Shift;
+            if (shortcutAlt) modifiers |= ShortcutModifiers.Alt;
+
+            ShortcutBinding newBinding = new ShortcutBinding(
+                new KeyCombination(shortcutKey, modifiers));
+            string conflictId = FindShortcutConflict(newBinding);
+
+            if (!string.IsNullOrEmpty(conflictId))
+            {
+                shortcutStatus = "快捷键与“" + conflictId + "”冲突，请更换组合。";
+                shortcutStatusType = MessageType.Warning;
+                return;
+            }
+
+            try
+            {
+                ShortcutManager.instance.RebindShortcut(ScreenshotShortcutId, newBinding);
+                shortcutStatus = "快捷键已更新为 " + GetCurrentShortcutText() + "。";
+                shortcutStatusType = MessageType.Info;
+            }
+            catch (System.Exception exception)
+            {
+                shortcutStatus = "快捷键设置失败：" + exception.Message;
+                shortcutStatusType = MessageType.Error;
+            }
+            Repaint();
+        }
+
+        void ResetShortcutBinding()
+        {
+            try
+            {
+                ShortcutManager.instance.ClearShortcutOverride(ScreenshotShortcutId);
+                RefreshShortcutFields();
+                RefreshShortcutConflictStatus();
+                if (string.IsNullOrEmpty(shortcutStatus))
+                {
+                    shortcutStatus = "已恢复默认快捷键：" + GetCurrentShortcutText() + "。";
+                    shortcutStatusType = MessageType.Info;
+                }
+            }
+            catch (System.Exception exception)
+            {
+                shortcutStatus = "恢复默认快捷键失败：" + exception.Message;
+                shortcutStatusType = MessageType.Error;
+            }
+            Repaint();
+        }
+
+        void RefreshShortcutConflictStatus()
+        {
+            if (shortcutKey == KeyCode.None)
+            {
+                shortcutStatus = "当前没有设置快捷键。";
+                shortcutStatusType = MessageType.Info;
+                return;
+            }
+
+            ShortcutBinding currentBinding =
+                ShortcutManager.instance.GetShortcutBinding(ScreenshotShortcutId);
+            string conflictId = FindShortcutConflict(currentBinding);
+
+            if (!string.IsNullOrEmpty(conflictId))
+            {
+                shortcutStatus = "当前快捷键与“" + conflictId + "”冲突，请重新设置。";
+                shortcutStatusType = MessageType.Warning;
+            }
+            else
+            {
+                shortcutStatus = null;
+            }
+        }
+
+        string FindShortcutConflict(ShortcutBinding candidate)
+        {
+            foreach (string shortcutId in ShortcutManager.instance.GetAvailableShortcutIds())
+            {
+                if (shortcutId == ScreenshotShortcutId)
+                    continue;
+
+                ShortcutBinding binding = ShortcutManager.instance.GetShortcutBinding(shortcutId);
+                if (candidate.Equals(binding))
+                    return shortcutId;
+            }
+
+            return null;
+        }
+
+        void OnShortcutBindingChanged(ShortcutBindingChangedEventArgs args)
+        {
+            if (args.shortcutId != ScreenshotShortcutId)
+                return;
+
+            RefreshShortcutFields();
+            RefreshShortcutConflictStatus();
+            Repaint();
+        }
+#endif
 
         void DrawSequenceSetting()
         {
@@ -320,6 +536,9 @@ namespace ArtTools.ImageTools
 
         void OnDisable()
         {
+#if UNITY_2019_1_OR_NEWER
+            ShortcutManager.instance.shortcutBindingChanged -= OnShortcutBindingChanged;
+#endif
             EditorUtility.ClearProgressBar();
             RestoreCamera();
         }
