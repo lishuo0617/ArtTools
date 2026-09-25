@@ -1,6 +1,6 @@
 # ArtTools · Unity 美术工具箱
 
-![ArtTools QQ 交流群二维码](./QQ群二维码.png)
+<img src="./QQ群二维码.png" alt="ArtTools QQ 交流群二维码" width="50%">
 
 **扫码加入 ArtTools QQ 交流群，或在 QQ 中搜索群号 1124864329。** 欢迎交流工具使用、反馈问题和提出功能建议。
 
